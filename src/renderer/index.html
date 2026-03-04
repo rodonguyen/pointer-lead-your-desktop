@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pointer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Title Bar -->
+  <div id="title-bar">
+    <h1>👆 Pointer</h1>
+    <button id="btn-reset">New chat</button>
+  </div>
+
+  <!-- Chat bubbles -->
+  <div id="chat-area">
+    <div class="bubble ai">
+      Hi! I'm Pointer. Ask me anything like <em>"How do I open Notepad?"</em> and I'll guide you step by step!
+    </div>
+  </div>
+
+  <!-- Current step card -->
+  <div id="step-card">
+    <div id="step-progress">Step 1 of 3</div>
+    <div id="step-instruction">Instruction goes here.</div>
+    <div id="step-type-badge" class="badge-click">Click</div>
+  </div>
+
+  <!-- Step navigation -->
+  <div id="step-nav">
+    <button id="btn-prev">← Back</button>
+    <button id="btn-next">NEXT STEP →</button>
+    <button id="btn-stuck">🆘 Stuck</button>
+  </div>
+
+  <!-- Question input -->
+  <div id="input-area">
+    <textarea id="question-input" placeholder="Ask me anything…" rows="1"></textarea>
+    <button id="btn-ask">➤</button>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

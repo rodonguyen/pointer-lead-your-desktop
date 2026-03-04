@@ -1,0 +1,18 @@
+{
+  "name": "pointer-lead-your-desktop",
+  "version": "0.1.0",
+  "description": "Desktop AI guide app — shows animated pointer to help non-technical users",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.0",
+    "dotenv": "^16.4.5",
+    "electron-store": "^9.0.0",
+    "tesseract.js": "^5.1.0"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}

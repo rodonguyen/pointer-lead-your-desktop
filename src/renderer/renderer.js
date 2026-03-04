@@ -1,0 +1,133 @@
+const chatArea      = document.getElementById('chat-area');
+const stepCard      = document.getElementById('step-card');
+const stepProgress  = document.getElementById('step-progress');
+const stepInstruct  = document.getElementById('step-instruction');
+const stepBadge     = document.getElementById('step-type-badge');
+const stepNav       = document.getElementById('step-nav');
+const questionInput = document.getElementById('question-input');
+const btnAsk        = document.getElementById('btn-ask');
+const btnNext       = document.getElementById('btn-next');
+const btnPrev       = document.getElementById('btn-prev');
+const btnStuck      = document.getElementById('btn-stuck');
+const btnReset      = document.getElementById('btn-reset');
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function addBubble(text, type = 'ai', extraClass = '') {
+  const div = document.createElement('div');
+  div.className = `bubble ${type} ${extraClass}`.trim();
+  div.textContent = text;
+  chatArea.appendChild(div);
+  chatArea.scrollTop = chatArea.scrollHeight;
+  return div;
+}
+
+function addLoadingBubble() {
+  const div = document.createElement('div');
+  div.className = 'bubble ai';
+  div.innerHTML = '<div class="loading-dots"><span></span><span></span><span></span></div>';
+  chatArea.appendChild(div);
+  chatArea.scrollTop = chatArea.scrollHeight;
+  return div;
+}
+
+function setInputEnabled(enabled) {
+  questionInput.disabled = !enabled;
+  btnAsk.disabled = !enabled;
+}
+
+const BADGE_CLASSES = { click: 'badge-click', type: 'badge-type', look: 'badge-look', highlight: 'badge-highlight' };
+const BADGE_LABELS  = { click: 'Click', type: 'Type here', look: 'Look here', highlight: 'Highlight' };
+
+function updateStepCard(index, total, instruction, pointer_type) {
+  stepProgress.textContent = `Step ${index + 1} of ${total}`;
+  stepInstruct.textContent = instruction;
+  stepBadge.className = `step-type-badge ${BADGE_CLASSES[pointer_type] || 'badge-click'}`;
+  stepBadge.textContent = BADGE_LABELS[pointer_type] || pointer_type;
+  stepCard.classList.add('visible');
+  stepNav.classList.add('visible');
+
+  btnPrev.disabled = index === 0;
+  btnNext.textContent = index === total - 1 ? 'Done ✓' : 'NEXT STEP →';
+}
+
+// ── Event Listeners ────────────────────────────────────────────────────────
+
+async function handleAsk() {
+  const q = questionInput.value.trim();
+  if (!q) return;
+
+  questionInput.value = '';
+  setInputEnabled(false);
+  stepCard.classList.remove('visible');
+  stepNav.classList.remove('visible');
+
+  addBubble(q, 'user');
+  const loader = addLoadingBubble();
+
+  try {
+    await window.pointer.askQuestion(q);
+  } catch (err) {
+    loader.remove();
+    addBubble('Something went wrong. Please try again.', 'ai');
+    setInputEnabled(true);
+  }
+}
+
+btnAsk.addEventListener('click', handleAsk);
+questionInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleAsk();
+  }
+});
+
+btnNext.addEventListener('click', async () => {
+  if (btnNext.textContent.startsWith('Done')) {
+    await window.pointer.resetSession();
+    stepCard.classList.remove('visible');
+    stepNav.classList.remove('visible');
+    addBubble('Great job! You did it! Ask me anything else.', 'ai');
+    setInputEnabled(true);
+  } else {
+    await window.pointer.nextStep();
+  }
+});
+
+btnPrev.addEventListener('click', () => window.pointer.prevStep());
+btnStuck.addEventListener('click', () => window.pointer.markStuck());
+
+btnReset.addEventListener('click', async () => {
+  await window.pointer.resetSession();
+  chatArea.innerHTML = '<div class="bubble ai">Hi! I\'m Pointer. Ask me anything like <em>"How do I open Notepad?"</em> and I\'ll guide you step by step!</div>';
+  stepCard.classList.remove('visible');
+  stepNav.classList.remove('visible');
+  setInputEnabled(true);
+});
+
+// ── IPC from Main ──────────────────────────────────────────────────────────
+
+let loadingBubble = null;
+
+window.pointer.on('steps-ready', ({ steps, friendly_summary }) => {
+  // Remove loader, show summary
+  const loaders = chatArea.querySelectorAll('.bubble.ai');
+  const last = loaders[loaders.length - 1];
+  if (last && last.querySelector('.loading-dots')) last.remove();
+
+  addBubble(friendly_summary, 'ai', 'summary');
+  setInputEnabled(true);
+});
+
+window.pointer.on('step-changed', ({ index, total, instruction, pointer_type }) => {
+  updateStepCard(index, total, instruction, pointer_type);
+});
+
+window.pointer.on('error', (message) => {
+  const loaders = chatArea.querySelectorAll('.bubble.ai');
+  const last = loaders[loaders.length - 1];
+  if (last && last.querySelector('.loading-dots')) last.remove();
+
+  addBubble(message, 'ai');
+  setInputEnabled(true);
+});

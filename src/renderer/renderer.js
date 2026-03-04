@@ -109,8 +109,18 @@ btnReset.addEventListener('click', async () => {
 
 let loadingBubble = null;
 
+window.pointer.on('loading', (isLoading) => {
+  if (isLoading) {
+    loadingBubble = addLoadingBubble();
+  } else if (loadingBubble) {
+    loadingBubble.remove();
+    loadingBubble = null;
+  }
+});
+
 window.pointer.on('steps-ready', ({ steps, friendly_summary }) => {
-  // Remove loader, show summary
+  // Remove any leftover loader
+  if (loadingBubble) { loadingBubble.remove(); loadingBubble = null; }
   const loaders = chatArea.querySelectorAll('.bubble.ai');
   const last = loaders[loaders.length - 1];
   if (last && last.querySelector('.loading-dots')) last.remove();

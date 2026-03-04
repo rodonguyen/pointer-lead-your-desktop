@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { app, BrowserWindow, ipcMain, Tray, nativeImage, screen } = require('electron');
 const path = require('path');
+const { captureScreen } = require('./src/services/screenshotService');
 
 let chatWindow = null;
 let overlayWindow = null;
@@ -77,7 +78,22 @@ app.on('window-all-closed', () => {
 // ── IPC Handlers ──────────────────────────────────────────────────────────────
 
 ipcMain.handle('ask-question', async (e, question) => {
-  // Phase 1: return hard-coded steps for testing
+  chatWindow.webContents.send('loading', true);
+
+  // Hide chat window so it doesn't appear in screenshot
+  chatWindow.hide();
+  await sleep(150); // wait for compositor to remove window from screen
+
+  let screenshotBase64;
+  try {
+    screenshotBase64 = await captureScreen();
+  } finally {
+    chatWindow.show();
+  }
+
+  // Phase 2: still hard-coded steps, but screenshot is captured and ready for AI (Phase 3)
+  console.log(`[Phase 2] Screenshot captured — ${Math.round(screenshotBase64.length / 1024)} KB base64`);
+
   steps = [
     {
       instruction: 'Click the Start button in the bottom-left corner of your screen.',
@@ -103,9 +119,10 @@ ipcMain.handle('ask-question', async (e, question) => {
   ];
   currentStepIndex = -1;
 
+  chatWindow.webContents.send('loading', false);
   chatWindow.webContents.send('steps-ready', {
     steps,
-    friendly_summary: `Sure! Here are ${steps.length} easy steps to open Notepad.`,
+    friendly_summary: `Sure! Here are ${steps.length} easy steps. (Screenshot captured ✓)`,
   });
 
   await activateStep(0);
@@ -133,6 +150,10 @@ ipcMain.handle('reset-session', async () => {
   currentStepIndex = -1;
   overlayWindow.webContents.send('hide-pointer');
 });
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── Step Activation ───────────────────────────────────────────────────────────
 

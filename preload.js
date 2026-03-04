@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('pointer', {
   prevStep: () => ipcRenderer.invoke('prev-step'),
   markStuck: () => ipcRenderer.invoke('mark-stuck'),
   resetSession: () => ipcRenderer.invoke('reset-session'),
+  hideWindow: () => ipcRenderer.invoke('hide-window'),
+  closeWindow: () => ipcRenderer.invoke('close-window'),
 
   // Main → Renderer (listen)
   on: (channel, callback) => {

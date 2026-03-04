@@ -10,6 +10,8 @@ const btnNext       = document.getElementById('btn-next');
 const btnPrev       = document.getElementById('btn-prev');
 const btnStuck      = document.getElementById('btn-stuck');
 const btnReset      = document.getElementById('btn-reset');
+const btnHideWindow = document.getElementById('btn-hide-window');
+const btnCloseWindow = document.getElementById('btn-close-window');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -63,12 +65,11 @@ async function handleAsk() {
   stepNav.classList.remove('visible');
 
   addBubble(q, 'user');
-  const loader = addLoadingBubble();
 
   try {
     await window.pointer.askQuestion(q);
   } catch (err) {
-    loader.remove();
+    if (loadingBubble) { loadingBubble.remove(); loadingBubble = null; }
     addBubble('Something went wrong. Please try again.', 'ai');
     setInputEnabled(true);
   }
@@ -96,6 +97,8 @@ btnNext.addEventListener('click', async () => {
 
 btnPrev.addEventListener('click', () => window.pointer.prevStep());
 btnStuck.addEventListener('click', () => window.pointer.markStuck());
+btnHideWindow.addEventListener('click', () => window.pointer.hideWindow());
+btnCloseWindow.addEventListener('click', () => window.pointer.closeWindow());
 
 btnReset.addEventListener('click', async () => {
   await window.pointer.resetSession();

@@ -90,16 +90,17 @@ app.on('window-all-closed', () => {
 ipcMain.handle('ask-question', async (e, question) => {
   chatWindow.webContents.send('loading', true);
 
-  // Hide both windows so neither appears in the screenshot
+  // Move chat window off-screen so it doesn't appear in the screenshot
   overlayWindow.webContents.send('hide-pointer');
-  chatWindow.hide();
+  const prevBounds = chatWindow.getBounds();
+  chatWindow.setPosition(-prevBounds.width - 100, -prevBounds.height - 100);
   await sleep(200); // wait for compositor to flush both windows off screen
 
   let capture;
   try {
     capture = await captureScreen();
   } finally {
-    chatWindow.show();
+    chatWindow.setPosition(prevBounds.x, prevBounds.y);
   }
 
   lastScreenshot = capture.base64;
@@ -149,6 +150,14 @@ ipcMain.handle('reset-session', async () => {
   steps = [];
   currentStepIndex = -1;
   overlayWindow.webContents.send('hide-pointer');
+});
+
+ipcMain.handle('hide-window', () => {
+  chatWindow && chatWindow.minimize();
+});
+
+ipcMain.handle('close-window', () => {
+  app.quit();
 });
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

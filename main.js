@@ -2,6 +2,7 @@ require('dotenv').config();
 const { app, BrowserWindow, ipcMain, Tray, nativeImage, screen } = require('electron');
 const path = require('path');
 const { captureScreen } = require('./src/services/screenshotService');
+const { askClaude } = require('./src/services/aiService');
 
 let chatWindow = null;
 let overlayWindow = null;
@@ -91,38 +92,25 @@ ipcMain.handle('ask-question', async (e, question) => {
     chatWindow.show();
   }
 
-  // Phase 2: still hard-coded steps, but screenshot is captured and ready for AI (Phase 3)
-  console.log(`[Phase 2] Screenshot captured — ${Math.round(screenshotBase64.length / 1024)} KB base64`);
+  console.log(`[Phase 3] Screenshot captured — ${Math.round(screenshotBase64.length / 1024)} KB, calling Claude…`);
 
-  steps = [
-    {
-      instruction: 'Click the Start button in the bottom-left corner of your screen.',
-      search_text: 'Start',
-      target_description: 'Start button',
-      region: { x: 0.02, y: 0.97, w: 0.05, h: 0.05 },
-      pointer_type: 'click',
-    },
-    {
-      instruction: 'Type "Notepad" in the search box that appears.',
-      search_text: null,
-      target_description: 'search box',
-      region: { x: 0.3, y: 0.85, w: 0.4, h: 0.05 },
-      pointer_type: 'type',
-    },
-    {
-      instruction: 'Click on "Notepad" in the search results.',
-      search_text: 'Notepad',
-      target_description: 'Notepad result',
-      region: { x: 0.3, y: 0.7, w: 0.3, h: 0.05 },
-      pointer_type: 'click',
-    },
-  ];
+  let result;
+  try {
+    result = await askClaude(question, screenshotBase64);
+  } catch (err) {
+    console.error('[Phase 3] Claude error:', err.message);
+    chatWindow.webContents.send('loading', false);
+    chatWindow.webContents.send('error', `Sorry, I couldn't get instructions: ${err.message}`);
+    return { ok: false };
+  }
+
+  steps = result.steps;
   currentStepIndex = -1;
 
   chatWindow.webContents.send('loading', false);
   chatWindow.webContents.send('steps-ready', {
     steps,
-    friendly_summary: `Sure! Here are ${steps.length} easy steps. (Screenshot captured ✓)`,
+    friendly_summary: result.friendly_summary,
   });
 
   await activateStep(0);

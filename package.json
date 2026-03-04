@@ -4,7 +4,8 @@
   "description": "Desktop AI guide app — shows animated pointer to help non-technical users",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "test": "playwright test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
@@ -13,6 +14,7 @@
     "tesseract.js": "^5.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "electron": "^31.0.0"
   }
 }

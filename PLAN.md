@@ -124,7 +124,32 @@ overlayWindow.setAlwaysOnTop(true, 'screen-saver')           // Above chat windo
 | 4 | Overlay accuracy | Normalized coords → correct pixel positions |
 | 5 | OCR refinement | OCR snaps pointer to exact element |
 | 6 | UX polish | Hotkey, tray, stuck button, loading states, API key setup |
-| 7 | Packaging | `.exe` installer via electron-builder |
+| 7 | Auto-click | AI clicks on behalf of the user (opt-in toggle) |
+| 8 | Packaging | `.exe` installer via electron-builder |
+
+## Phase 7: Auto-Click Feature
+
+Allow the AI to perform the actual mouse click after showing the pointer, so the user doesn't have to click themselves.
+
+### Implementation
+- Add `@nut-tree/nut-js` (preferred) or `robotjs` for mouse automation
+- Add "Click for me" toggle in the chat window UI
+- New IPC handler in `main.js`:
+  ```js
+  ipcMain.handle('auto-click', async (e, { x, y, pointer_type }) => {
+    if (pointer_type !== 'click') return; // only auto-click on click steps
+    await sleep(800); // pause so user sees pointer first
+    robot.moveMouse(x, y);
+    robot.mouseClick();
+  });
+  ```
+- Call after `show-pointer` in the existing `activateStep()` flow when toggle is on
+
+### Notes
+- `pointer_type: "highlight"`, `"look"`, `"type"` steps are skipped (no auto-click)
+- For `"type"` steps, optionally auto-focus the field and type the suggested text
+- May require accessibility permissions on Windows for some apps (UAC-elevated windows)
+- Native binaries must be rebuilt for Electron during packaging (`electron-rebuild`)
 
 ## Files to Create (all new — empty repo)
 - `package.json`

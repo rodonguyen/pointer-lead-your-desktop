@@ -1,10 +1,19 @@
 const canvas = document.getElementById('canvas');
 const ctx    = canvas.getContext('2d');
 
-// Match canvas to window size
+// Match canvas drawing buffer to physical pixels to avoid blur on scaled displays.
+// All pointer coordinates sent from main.js are in logical pixels, so we scale
+// the canvas context to match and draw at the right physical position.
+const dpr = window.devicePixelRatio || 1;
+
 function resize() {
-  canvas.width  = window.innerWidth;
-  canvas.height = window.innerHeight;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  canvas.width  = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // scale drawing coords to physical pixels
 }
 resize();
 window.addEventListener('resize', resize);

@@ -95,6 +95,46 @@ overlayWindow.setAlwaysOnTop(true, 'screen-saver')           // Above chat windo
 // focusable: false prevents keyboard focus trap
 ```
 
+### Always-On-Top: Above Taskbar & System UI
+Both the overlay and chat window must appear above the Windows taskbar, notification center, and other shell components. The default `alwaysOnTop: true` flag does NOT guarantee this.
+
+**Z-level hierarchy on Windows (low → high):**
+| Level | Stays above taskbar? |
+|---|---|
+| `'normal'` (default) | No |
+| `'floating'` | No |
+| `'torn-off-menu'` | Sometimes |
+| `'modal-panel'` | Sometimes |
+| `'main-menu'` / `'status'` | Yes |
+| `'pop-up-menu'` | Yes |
+| `'screen-saver'` | Yes — highest |
+
+**Rules:**
+- Overlay window: use `'screen-saver'` (already set) — this is the correct top-most level
+- Chat window: must also call `setAlwaysOnTop(true, 'screen-saver')` after creation, not just `alwaysOnTop: true` in constructor options (the constructor option only sets `'floating'` level internally)
+- Re-assert on `focus` and `show` events — Windows can drop z-order when another app goes fullscreen or UAC prompts appear
+- On multi-monitor setups, always-on-top applies per-display; no extra work needed
+
+**Implementation in main.js:**
+```javascript
+function createChatWindow() {
+  chatWindow = new BrowserWindow({ ..., alwaysOnTop: true });
+  chatWindow.setAlwaysOnTop(true, 'screen-saver'); // explicitly set level
+  chatWindow.on('show', () => chatWindow.setAlwaysOnTop(true, 'screen-saver')); // re-assert on show
+}
+
+function createOverlayWindow() {
+  overlayWindow = new BrowserWindow({ ..., alwaysOnTop: true });
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  overlayWindow.on('show', () => overlayWindow.setAlwaysOnTop(true, 'screen-saver'));
+}
+```
+
+**Edge cases to handle:**
+- Fullscreen apps (games, video players) — Windows forces overlays behind fullscreen; no workaround without hooking into the app; document as known limitation
+- UAC elevation prompts — always appear on top of everything by OS design; acceptable
+- Notifications / Action Center — `'screen-saver'` level floats above these
+
 ### IPC Channels
 - `ask-question` → main (invoke)
 - `next-step`, `prev-step`, `mark-stuck`, `reset-session` → main (invoke)

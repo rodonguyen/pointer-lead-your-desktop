@@ -3,6 +3,8 @@ const { app, BrowserWindow, ipcMain, Tray, nativeImage, screen } = require('elec
 const path = require('path');
 const { captureScreen } = require('./src/services/screenshotService');
 const { askClaude } = require('./src/services/aiService');
+const { initOcr, destroyOcr, findTextOnScreen } = require('./src/services/ocrService');
+const { resolvePointerCoords } = require('./src/services/pointerService');
 
 let chatWindow = null;
 let overlayWindow = null;
@@ -11,6 +13,8 @@ let tray = null;
 // Session state
 let steps = [];
 let currentStepIndex = -1;
+let lastScreenshot = null; // retained for OCR during step activation
+let lastImgSize    = null; // actual screenshot pixel dimensions for coord mapping
 
 function createChatWindow() {
   chatWindow = new BrowserWindow({
@@ -27,6 +31,8 @@ function createChatWindow() {
     },
   });
 
+  chatWindow.setAlwaysOnTop(true, 'screen-saver');
+  chatWindow.on('show', () => chatWindow.setAlwaysOnTop(true, 'screen-saver'));
   chatWindow.loadFile(path.join(__dirname, 'src/renderer/index.html'));
 }
 
@@ -70,7 +76,10 @@ app.whenReady().then(() => {
   createChatWindow();
   createOverlayWindow();
   createTray();
+  initOcr(); // warm up Tesseract worker in background
 });
+
+app.on('quit', () => destroyOcr());
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -81,24 +90,27 @@ app.on('window-all-closed', () => {
 ipcMain.handle('ask-question', async (e, question) => {
   chatWindow.webContents.send('loading', true);
 
-  // Hide chat window so it doesn't appear in screenshot
+  // Hide both windows so neither appears in the screenshot
+  overlayWindow.webContents.send('hide-pointer');
   chatWindow.hide();
-  await sleep(150); // wait for compositor to remove window from screen
+  await sleep(200); // wait for compositor to flush both windows off screen
 
-  let screenshotBase64;
+  let capture;
   try {
-    screenshotBase64 = await captureScreen();
+    capture = await captureScreen();
   } finally {
     chatWindow.show();
   }
 
-  console.log(`[Phase 3] Screenshot captured — ${Math.round(screenshotBase64.length / 1024)} KB, calling Claude…`);
+  lastScreenshot = capture.base64;
+  lastImgSize    = { imgWidth: capture.imgWidth, imgHeight: capture.imgHeight };
+  console.log(`[Pointer] Screenshot captured — ${capture.imgWidth}×${capture.imgHeight}px (${Math.round(capture.base64.length / 1024)} KB), calling Claude…`);
 
   let result;
   try {
-    result = await askClaude(question, screenshotBase64);
+    result = await askClaude(question, capture.base64);
   } catch (err) {
-    console.error('[Phase 3] Claude error:', err.message);
+    console.error('[Pointer] Claude error:', err.message);
     chatWindow.webContents.send('loading', false);
     chatWindow.webContents.send('error', `Sorry, I couldn't get instructions: ${err.message}`);
     return { ok: false };
@@ -148,11 +160,21 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function activateStep(index) {
   currentStepIndex = index;
   const step = steps[index];
-  const { width, height } = screen.getPrimaryDisplay().bounds;
 
-  // Convert normalized coords to pixels
-  const px = Math.round(step.region.x * width);
-  const py = Math.round(step.region.y * height);
+  // Phase 5: OCR snap — try to find the exact UI element text on screen
+  let ocrRect = null;
+  if (step.search_text && lastScreenshot) {
+    try {
+      ocrRect = await findTextOnScreen(lastScreenshot, step.region, step.search_text);
+      if (ocrRect) console.log(`[Pointer] OCR snapped to "${step.search_text}" at`, ocrRect);
+      else console.log(`[Pointer] OCR found no match for "${step.search_text}", using AI coords`);
+    } catch (err) {
+      console.warn('[Pointer] OCR error:', err.message);
+    }
+  }
+
+  // Phase 4: resolve final pixel coords (OCR takes priority over AI coords)
+  const { x: px, y: py } = resolvePointerCoords(step.region, ocrRect, lastImgSize);
 
   overlayWindow.webContents.send('show-pointer', {
     x: px,

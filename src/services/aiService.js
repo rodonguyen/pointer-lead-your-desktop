@@ -73,8 +73,9 @@ async function askClaude(question, screenshotBase64) {
 
   const raw = response.content[0].text.trim();
 
-  // Strip markdown code fences if model wraps the JSON anyway
-  const jsonText = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+  // Extract the first complete JSON object from the response.
+  // Handles: plain JSON, ```json fences, or prose before/after the JSON block.
+  const jsonText = extractJson(raw);
 
   let parsed;
   try {
@@ -88,6 +89,34 @@ async function askClaude(question, screenshotBase64) {
   }
 
   return parsed;
+}
+
+/**
+ * Extracts the first complete {...} JSON object from a string that may contain
+ * prose, markdown fences, or other text before/after the JSON.
+ */
+function extractJson(text) {
+  const start = text.indexOf('{');
+  if (start === -1) return text; // no object found — let JSON.parse fail with original
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+
+  return text.slice(start); // unclosed — let JSON.parse surface the error
 }
 
 module.exports = { askClaude };

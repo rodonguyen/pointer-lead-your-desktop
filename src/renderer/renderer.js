@@ -1,7 +1,4 @@
 const chatArea      = document.getElementById('chat-area');
-const stepCard      = document.getElementById('step-card');
-const stepProgress  = document.getElementById('step-progress');
-const stepBadge     = document.getElementById('step-type-badge');
 const stepNav       = document.getElementById('step-nav');
 const questionInput = document.getElementById('question-input');
 const btnAsk        = document.getElementById('btn-ask');
@@ -36,18 +33,10 @@ function setInputEnabled(enabled) {
   btnAsk.disabled = !enabled;
 }
 
-const BADGE_CLASSES = { click: 'badge-click', type: 'badge-type', look: 'badge-look', highlight: 'badge-highlight' };
-const BADGE_LABELS  = { click: 'Click', type: 'Type here', look: 'Look here', highlight: 'Highlight' };
-
-function updateStepCard(stepNum, instruction, pointer_type) {
-  stepProgress.textContent = `Step ${stepNum}`;
-  stepBadge.className = `step-type-badge ${BADGE_CLASSES[pointer_type] || 'badge-click'}`;
-  stepBadge.textContent = BADGE_LABELS[pointer_type] || pointer_type;
-  stepCard.classList.add('visible');
+function updateStepCard(stepNum, instruction) {
   stepNav.classList.add('visible');
   btnNext.textContent = 'Done ✓';
-
-  addBubble(instruction, 'ai', 'step-instruction');
+  addBubble(`Step ${stepNum}: ${instruction}`, 'ai', 'step-instruction');
 }
 
 // ── Event Listeners ────────────────────────────────────────────────────────
@@ -58,7 +47,6 @@ async function handleAsk() {
 
   questionInput.value = '';
   setInputEnabled(false);
-  stepCard.classList.remove('visible');
   stepNav.classList.remove('visible');
 
   addBubble(q, 'user');
@@ -82,7 +70,6 @@ questionInput.addEventListener('keydown', (e) => {
 
 btnNext.addEventListener('click', async () => {
   await window.pointer.resetSession();
-  stepCard.classList.remove('visible');
   stepNav.classList.remove('visible');
   addBubble('Great job! Ask me anything else.', 'ai');
   setInputEnabled(true);
@@ -95,7 +82,6 @@ btnCloseWindow.addEventListener('click', () => window.pointer.closeWindow());
 btnReset.addEventListener('click', async () => {
   await window.pointer.resetSession();
   chatArea.innerHTML = '<div class="bubble ai">Hi! I\'m Pointer. Ask me anything like <em>"How do I open Notepad?"</em> and I\'ll guide you step by step!</div>';
-  stepCard.classList.remove('visible');
   stepNav.classList.remove('visible');
   setInputEnabled(true);
 });
@@ -136,7 +122,7 @@ window.pointer.on('step-changed', (data) => {
     return;
   }
 
-  updateStepCard(data.stepNum, data.instruction, data.pointer_type);
+  updateStepCard(data.stepNum, data.instruction);
 });
 
 window.pointer.on('error', (message) => {

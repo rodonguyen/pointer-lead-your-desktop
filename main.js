@@ -12,9 +12,10 @@ let overlayWindow = null;
 let tray = null;
 
 // Session state
-let steps = [];
-let currentStepIndex = -1;
-let lastScreenshot = null; // retained for OCR during step activation
+let currentTask    = null; // user's original question
+let currentStep    = null; // single step object from latest Claude response
+let stepCount      = 0;    // how many steps completed so far
+let stepSummary    = [];   // brief log of completed steps for Claude context
 let lastImgSize    = null; // actual screenshot pixel dimensions for coord mapping
 
 function createChatWindow() {
@@ -108,13 +109,18 @@ ipcMain.handle('ask-question', async (e, question) => {
     chatWindow.setPosition(prevBounds.x, prevBounds.y);
   }
 
-  lastScreenshot = capture.base64;
-  lastImgSize    = { imgWidth: capture.imgWidth, imgHeight: capture.imgHeight };
+  lastImgSize = { imgWidth: capture.imgWidth, imgHeight: capture.imgHeight };
   console.log(`[Pointer] Screenshot captured — ${capture.imgWidth}×${capture.imgHeight}px (${Math.round(capture.base64.length / 1024)} KB), calling Claude…`);
+
+  // Reset session state for new task
+  currentTask = question;
+  stepCount   = 0;
+  stepSummary = [];
+  currentStep = null;
 
   let result;
   try {
-    result = await askClaude(question, capture.base64);
+    result = await askClaude(question, capture.base64, stepSummary);
   } catch (err) {
     console.error('[Pointer] Claude error:', err.message);
     chatWindow.webContents.send('loading', false);
@@ -122,30 +128,17 @@ ipcMain.handle('ask-question', async (e, question) => {
     return { ok: false };
   }
 
-  steps = result.steps;
-  currentStepIndex = -1;
-
   chatWindow.webContents.send('loading', false);
   chatWindow.webContents.send('steps-ready', {
-    steps,
-    friendly_summary: result.friendly_summary,
+    friendly_summary: result.friendly_message || 'Let me guide you through this!',
   });
 
-  await activateStep(0);
+  await applyStep(result, capture.base64);
   return { ok: true };
 });
 
 ipcMain.handle('next-step', async () => {
-  if (currentStepIndex < steps.length - 1) {
-    await activateStep(currentStepIndex + 1);
-  }
-});
-
-ipcMain.handle('prev-step', async () => {
-  stopDetection();
-  if (currentStepIndex > 0) {
-    await activateStep(currentStepIndex - 1);
-  }
+  await analyzeNextStep();
 });
 
 ipcMain.handle('mark-stuck', async () => {
@@ -154,8 +147,10 @@ ipcMain.handle('mark-stuck', async () => {
 
 ipcMain.handle('reset-session', async () => {
   stopDetection();
-  steps = [];
-  currentStepIndex = -1;
+  currentTask  = null;
+  currentStep  = null;
+  stepCount    = 0;
+  stepSummary  = [];
   overlayWindow.webContents.send('hide-pointer');
 });
 
@@ -171,48 +166,101 @@ ipcMain.handle('close-window', () => {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Step Activation ───────────────────────────────────────────────────────────
+// ── Step Analysis ─────────────────────────────────────────────────────────────
 
-async function activateStep(index) {
-  stopDetection(); // cancel any detection from the previous step
-  currentStepIndex = index;
-  const step = steps[index];
+/**
+ * Takes a fresh screenshot, asks Claude for the next single step, then applies it.
+ */
+async function analyzeNextStep() {
+  stopDetection();
 
-  // Phase 5: OCR snap — try to find the exact UI element text on screen
+  if (!currentTask) return;
+
+  // Record the completed step in history before fetching the next one
+  if (currentStep && !currentStep.is_complete) {
+    stepSummary.push(currentStep.instruction || currentStep.target_description || 'Step completed');
+  }
+
+  chatWindow.webContents.send('loading', true);
+
+  // Hide chat window for clean screenshot
+  const prevBounds = chatWindow.getBounds();
+  chatWindow.setPosition(-prevBounds.width - 100, -prevBounds.height - 100);
+  overlayWindow.webContents.send('hide-pointer');
+  await sleep(200);
+
+  let capture;
+  try {
+    capture = await captureScreen();
+  } finally {
+    chatWindow.setPosition(prevBounds.x, prevBounds.y);
+  }
+
+  lastImgSize = { imgWidth: capture.imgWidth, imgHeight: capture.imgHeight };
+  console.log(`[Pointer] Fresh screenshot for step ${stepCount + 1} — ${capture.imgWidth}×${capture.imgHeight}px, calling Claude…`);
+
+  let result;
+  try {
+    result = await askClaude(currentTask, capture.base64, stepSummary);
+  } catch (err) {
+    console.error('[Pointer] Claude error:', err.message);
+    chatWindow.webContents.send('loading', false);
+    chatWindow.webContents.send('error', `Sorry, something went wrong: ${err.message}`);
+    return;
+  }
+
+  chatWindow.webContents.send('loading', false);
+  await applyStep(result, capture.base64);
+}
+
+/**
+ * Applies a step response from Claude — either shows completion or activates the step.
+ * @param {object} result - Claude response object
+ * @param {string} screenshotBase64 - The screenshot used for this step (for OCR)
+ */
+async function applyStep(result, screenshotBase64) {
+  currentStep = result;
+
+  if (result.is_complete) {
+    overlayWindow.webContents.send('hide-pointer');
+    chatWindow.webContents.send('step-changed', {
+      is_complete: true,
+      friendly_message: result.friendly_message,
+    });
+    return;
+  }
+
+  stepCount++;
+
+  // OCR snap — try to find the exact UI element text on screen
   let ocrRect = null;
-  if (step.search_text && lastScreenshot) {
+  if (result.search_text && screenshotBase64) {
     try {
-      ocrRect = await findTextOnScreen(lastScreenshot, step.region, step.search_text, lastImgSize);
-      if (ocrRect) console.log(`[Pointer] OCR snapped to "${step.search_text}" at`, ocrRect);
-      else console.log(`[Pointer] OCR found no match for "${step.search_text}", using AI coords`);
+      ocrRect = await findTextOnScreen(screenshotBase64, result.region, result.search_text, lastImgSize);
+      if (ocrRect) console.log(`[Pointer] OCR snapped to "${result.search_text}" at`, ocrRect);
+      else console.log(`[Pointer] OCR found no match for "${result.search_text}", using AI coords`);
     } catch (err) {
       console.warn('[Pointer] OCR error:', err.message);
     }
   }
 
-  // Phase 4: resolve final pixel coords (OCR takes priority over AI coords)
-  const { x: px, y: py } = resolvePointerCoords(step.region, ocrRect, lastImgSize);
+  const { x: px, y: py } = resolvePointerCoords(result.region, ocrRect, lastImgSize);
 
   overlayWindow.webContents.send('show-pointer', {
     x: px,
     y: py,
-    pointer_type: step.pointer_type,
+    pointer_type: result.pointer_type,
   });
 
   chatWindow.webContents.send('step-changed', {
-    index,
-    total: steps.length,
-    instruction: step.instruction,
-    pointer_type: step.pointer_type,
+    is_complete: false,
+    stepNum: stepCount,
+    instruction: result.instruction,
+    pointer_type: result.pointer_type,
   });
 
-  // Auto-advance: start detection for non-last steps
-  const isLast = index === steps.length - 1;
-  if (!isLast) {
-    startDetection(step, px, py, () => {
-      if (currentStepIndex === index) { // guard: user may have manually advanced already
-        activateStep(currentStepIndex + 1);
-      }
-    });
-  }
+  // Auto-advance: detect action completion then fetch next step
+  startDetection(result, px, py, () => {
+    analyzeNextStep();
+  });
 }

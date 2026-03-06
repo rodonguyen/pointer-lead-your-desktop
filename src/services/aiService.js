@@ -12,23 +12,30 @@ function getClient() {
 }
 
 const SYSTEM_PROMPT = `You are a desktop guide assistant helping non-technical users complete tasks on their computer.
-You will receive a screenshot of the user's current screen and their question.
+You will receive a screenshot of the user's current screen, their original task, and a summary of steps already completed.
 
 CRITICAL: You MUST visually locate every UI element in the provided screenshot before setting region coordinates.
 Do NOT use general knowledge about where things "usually" are (e.g. do not assume the Start button is bottom-left — on Windows 11 it is centered). Look at the actual screenshot pixels and find the element's real position.
 
-Respond ONLY with valid JSON in this exact schema — no markdown, no explanation:
+Determine the SINGLE next action the user needs to take. If the task is already complete based on the screenshot, say so.
+
+Respond ONLY with valid JSON in one of these two schemas — no markdown, no explanation:
+
+When there is a next action:
 {
-  "steps": [
-    {
-      "instruction": "Plain English instruction (short, friendly, 16px readable)",
-      "search_text": "Exact visible text on the button/field for OCR (null if no text label)",
-      "target_description": "Short label for the UI element",
-      "region": { "x": 0.0, "y": 0.0, "w": 0.1, "h": 0.05 },
-      "pointer_type": "click"
-    }
-  ],
-  "friendly_summary": "Encouraging 1-sentence intro shown to the user before steps"
+  "is_complete": false,
+  "instruction": "Plain English instruction (short, friendly, 16px readable)",
+  "search_text": "Exact visible text on the button/field for OCR (null if no text label)",
+  "target_description": "Short label for the UI element",
+  "region": { "x": 0.0, "y": 0.0, "w": 0.1, "h": 0.05 },
+  "pointer_type": "click",
+  "friendly_message": "Encouraging 1-sentence shown to the user"
+}
+
+When the task is complete:
+{
+  "is_complete": true,
+  "friendly_message": "Warm congratulations message"
 }
 
 Rules:
@@ -37,22 +44,25 @@ Rules:
 - BEFORE setting x/y: scan the screenshot to find exactly where the element appears. Set x/y to its actual visual center in the image, not where it "typically" would be
 - pointer_type must be one of: "click", "type", "look", "highlight"
 - search_text: exact text visible on the button/field; null if the element has no readable label
-- Keep instructions simple — the user may be in their 50s with limited tech experience
-- Maximum 7 steps; combine steps where sensible
-- friendly_summary must be warm and reassuring`;
+- Keep instructions simple — the user may be in their 50s with limited tech experience`;
 
 /**
- * Sends a question + screenshot to Claude and returns parsed step data.
- * @param {string} question - User's question
+ * Sends a question + screenshot to Claude and returns a single next step.
+ * @param {string} question - User's original task
  * @param {string} screenshotBase64 - Base64 PNG (no data-URI prefix)
- * @returns {{ steps: Array, friendly_summary: string }}
+ * @param {string[]} taskHistory - Array of completed step descriptions for context
+ * @returns {{ is_complete: boolean, instruction?: string, search_text?: string, target_description?: string, region?: object, pointer_type?: string, friendly_message: string }}
  */
-async function askClaude(question, screenshotBase64) {
+async function askClaude(question, screenshotBase64, taskHistory = []) {
   const claude = getClient();
+
+  const historyText = taskHistory.length > 0
+    ? `\n\nSteps already completed:\n${taskHistory.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
+    : '';
 
   const response = await claude.messages.create({
     model: 'claude-opus-4-6',
-    max_tokens: 2048,
+    max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -68,7 +78,7 @@ async function askClaude(question, screenshotBase64) {
           },
           {
             type: 'text',
-            text: question,
+            text: `Task: ${question}${historyText}`,
           },
         ],
       },
@@ -76,9 +86,6 @@ async function askClaude(question, screenshotBase64) {
   });
 
   const raw = response.content[0].text.trim();
-
-  // Extract the first complete JSON object from the response.
-  // Handles: plain JSON, ```json fences, or prose before/after the JSON block.
   const jsonText = extractJson(raw);
 
   let parsed;
@@ -88,8 +95,8 @@ async function askClaude(question, screenshotBase64) {
     throw new Error(`Claude returned invalid JSON: ${raw.slice(0, 200)}`);
   }
 
-  if (!Array.isArray(parsed.steps) || parsed.steps.length === 0) {
-    throw new Error('Claude returned no steps.');
+  if (typeof parsed.is_complete !== 'boolean') {
+    throw new Error('Claude returned invalid response: missing is_complete field.');
   }
 
   return parsed;

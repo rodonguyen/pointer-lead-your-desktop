@@ -1,13 +1,11 @@
 const chatArea      = document.getElementById('chat-area');
 const stepCard      = document.getElementById('step-card');
 const stepProgress  = document.getElementById('step-progress');
-const stepInstruct  = document.getElementById('step-instruction');
 const stepBadge     = document.getElementById('step-type-badge');
 const stepNav       = document.getElementById('step-nav');
 const questionInput = document.getElementById('question-input');
 const btnAsk        = document.getElementById('btn-ask');
 const btnNext       = document.getElementById('btn-next');
-const btnPrev       = document.getElementById('btn-prev');
 const btnStuck      = document.getElementById('btn-stuck');
 const btnReset      = document.getElementById('btn-reset');
 const btnHideWindow = document.getElementById('btn-hide-window');
@@ -41,16 +39,15 @@ function setInputEnabled(enabled) {
 const BADGE_CLASSES = { click: 'badge-click', type: 'badge-type', look: 'badge-look', highlight: 'badge-highlight' };
 const BADGE_LABELS  = { click: 'Click', type: 'Type here', look: 'Look here', highlight: 'Highlight' };
 
-function updateStepCard(index, total, instruction, pointer_type) {
-  stepProgress.textContent = `Step ${index + 1} of ${total}`;
-  stepInstruct.textContent = instruction;
+function updateStepCard(stepNum, instruction, pointer_type) {
+  stepProgress.textContent = `Step ${stepNum}`;
   stepBadge.className = `step-type-badge ${BADGE_CLASSES[pointer_type] || 'badge-click'}`;
   stepBadge.textContent = BADGE_LABELS[pointer_type] || pointer_type;
   stepCard.classList.add('visible');
   stepNav.classList.add('visible');
+  btnNext.textContent = 'Done ✓';
 
-  btnPrev.disabled = index === 0;
-  btnNext.textContent = index === total - 1 ? 'Done ✓' : 'NEXT STEP →';
+  addBubble(instruction, 'ai', 'step-instruction');
 }
 
 // ── Event Listeners ────────────────────────────────────────────────────────
@@ -84,18 +81,13 @@ questionInput.addEventListener('keydown', (e) => {
 });
 
 btnNext.addEventListener('click', async () => {
-  if (btnNext.textContent.startsWith('Done')) {
-    await window.pointer.resetSession();
-    stepCard.classList.remove('visible');
-    stepNav.classList.remove('visible');
-    addBubble('Great job! You did it! Ask me anything else.', 'ai');
-    setInputEnabled(true);
-  } else {
-    await window.pointer.nextStep();
-  }
+  await window.pointer.resetSession();
+  stepCard.classList.remove('visible');
+  stepNav.classList.remove('visible');
+  addBubble('Great job! Ask me anything else.', 'ai');
+  setInputEnabled(true);
 });
 
-btnPrev.addEventListener('click', () => window.pointer.prevStep());
 btnStuck.addEventListener('click', () => window.pointer.markStuck());
 btnHideWindow.addEventListener('click', () => window.pointer.hideWindow());
 btnCloseWindow.addEventListener('click', () => window.pointer.closeWindow());
@@ -121,7 +113,7 @@ window.pointer.on('loading', (isLoading) => {
   }
 });
 
-window.pointer.on('steps-ready', ({ steps, friendly_summary }) => {
+window.pointer.on('steps-ready', ({ friendly_summary }) => {
   // Remove any leftover loader
   if (loadingBubble) { loadingBubble.remove(); loadingBubble = null; }
   const loaders = chatArea.querySelectorAll('.bubble.ai');
@@ -132,8 +124,19 @@ window.pointer.on('steps-ready', ({ steps, friendly_summary }) => {
   setInputEnabled(true);
 });
 
-window.pointer.on('step-changed', ({ index, total, instruction, pointer_type }) => {
-  updateStepCard(index, total, instruction, pointer_type);
+window.pointer.on('step-changed', (data) => {
+  // Remove any loading bubble
+  if (loadingBubble) { loadingBubble.remove(); loadingBubble = null; }
+
+  if (data.is_complete) {
+    stepCard.classList.remove('visible');
+    stepNav.classList.remove('visible');
+    addBubble(data.friendly_message, 'ai', 'summary');
+    setInputEnabled(true);
+    return;
+  }
+
+  updateStepCard(data.stepNum, data.instruction, data.pointer_type);
 });
 
 window.pointer.on('error', (message) => {

@@ -34,4 +34,27 @@ async function captureScreen() {
   };
 }
 
-module.exports = { captureScreen };
+/**
+ * Captures a lightweight screenshot at 400×225 for pixel diff comparisons.
+ * Does NOT hide any windows. Returns { bitmap: Buffer, width, height }.
+ * bitmap is raw RGBA bytes from NativeImage.toBitmap().
+ */
+async function captureScreenLite() {
+  const LITE_WIDTH  = 400;
+  const LITE_HEIGHT = 225;
+
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: LITE_WIDTH, height: LITE_HEIGHT },
+  });
+
+  if (!sources.length) throw new Error('No screen sources found');
+
+  const primary = sources.find(s => s.name === 'Entire Screen' || s.name === 'Screen 1') || sources[0];
+  const { width, height } = primary.thumbnail.getSize();
+  const bitmap = primary.thumbnail.toBitmap();
+
+  return { bitmap, width, height };
+}
+
+module.exports = { captureScreen, captureScreenLite };

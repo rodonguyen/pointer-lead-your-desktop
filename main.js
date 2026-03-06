@@ -5,6 +5,7 @@ const { captureScreen } = require('./src/services/screenshotService');
 const { askClaude } = require('./src/services/aiService');
 const { initOcr, destroyOcr, findTextOnScreen } = require('./src/services/ocrService');
 const { resolvePointerCoords } = require('./src/services/pointerService');
+const { startDetection, stopDetection, startUiohook, stopUiohook } = require('./src/services/detectionService');
 
 let chatWindow = null;
 let overlayWindow = null;
@@ -77,9 +78,13 @@ app.whenReady().then(() => {
   createOverlayWindow();
   createTray();
   initOcr(); // warm up Tesseract worker in background
+  startUiohook();
 });
 
-app.on('quit', () => destroyOcr());
+app.on('quit', () => {
+  destroyOcr();
+  stopUiohook();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -137,6 +142,7 @@ ipcMain.handle('next-step', async () => {
 });
 
 ipcMain.handle('prev-step', async () => {
+  stopDetection();
   if (currentStepIndex > 0) {
     await activateStep(currentStepIndex - 1);
   }
@@ -147,6 +153,7 @@ ipcMain.handle('mark-stuck', async () => {
 });
 
 ipcMain.handle('reset-session', async () => {
+  stopDetection();
   steps = [];
   currentStepIndex = -1;
   overlayWindow.webContents.send('hide-pointer');
@@ -167,6 +174,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 // ── Step Activation ───────────────────────────────────────────────────────────
 
 async function activateStep(index) {
+  stopDetection(); // cancel any detection from the previous step
   currentStepIndex = index;
   const step = steps[index];
 
@@ -197,4 +205,14 @@ async function activateStep(index) {
     instruction: step.instruction,
     pointer_type: step.pointer_type,
   });
+
+  // Auto-advance: start detection for non-last steps
+  const isLast = index === steps.length - 1;
+  if (!isLast) {
+    startDetection(step, px, py, () => {
+      if (currentStepIndex === index) { // guard: user may have manually advanced already
+        activateStep(currentStepIndex + 1);
+      }
+    });
+  }
 }

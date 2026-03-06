@@ -14,6 +14,9 @@ function getClient() {
 const SYSTEM_PROMPT = `You are a desktop guide assistant helping non-technical users complete tasks on their computer.
 You will receive a screenshot of the user's current screen and their question.
 
+CRITICAL: You MUST visually locate every UI element in the provided screenshot before setting region coordinates.
+Do NOT use general knowledge about where things "usually" are (e.g. do not assume the Start button is bottom-left — on Windows 11 it is centered). Look at the actual screenshot pixels and find the element's real position.
+
 Respond ONLY with valid JSON in this exact schema — no markdown, no explanation:
 {
   "steps": [
@@ -31,6 +34,7 @@ Respond ONLY with valid JSON in this exact schema — no markdown, no explanatio
 Rules:
 - region x/y are the CENTER of the target element, normalized 0.0–1.0 (x=left→right, y=top→bottom)
 - region w/h are the element's width/height normalized 0.0–1.0
+- BEFORE setting x/y: scan the screenshot to find exactly where the element appears. Set x/y to its actual visual center in the image, not where it "typically" would be
 - pointer_type must be one of: "click", "type", "look", "highlight"
 - search_text: exact text visible on the button/field; null if the element has no readable label
 - Keep instructions simple — the user may be in their 50s with limited tech experience
@@ -47,7 +51,7 @@ async function askClaude(question, screenshotBase64) {
   const claude = getClient();
 
   const response = await claude.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-opus-4-6',
     max_tokens: 2048,
     system: SYSTEM_PROMPT,
     messages: [

@@ -182,7 +182,7 @@ async function activateStep(index) {
   let ocrRect = null;
   if (step.search_text && lastScreenshot) {
     try {
-      ocrRect = await findTextOnScreen(lastScreenshot, step.region, step.search_text);
+      ocrRect = await findTextOnScreen(lastScreenshot, step.region, step.search_text, lastImgSize);
       if (ocrRect) console.log(`[Pointer] OCR snapped to "${step.search_text}" at`, ocrRect);
       else console.log(`[Pointer] OCR found no match for "${step.search_text}", using AI coords`);
     } catch (err) {

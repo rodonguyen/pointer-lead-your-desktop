@@ -24,26 +24,33 @@ async function destroyOcr() {
 
 /**
  * Crops a 3× hint region from a full-screen base64 PNG and runs OCR on it.
- * Returns the bounding box (in full-screen pixel coords) of the best text match,
+ * Returns the bounding box (in full-screen PHYSICAL pixel coords) of the best text match,
  * or null if no confident match is found.
  *
  * @param {string} screenshotBase64 - Full-screen PNG, no data-URI prefix
  * @param {{ x: number, y: number, w: number, h: number }} region - AI normalized region (x/y = center)
  * @param {string|null} searchText - Exact text to find, or null to skip OCR
+ * @param {{ imgWidth: number, imgHeight: number }|null} imgSize - actual screenshot dimensions
  * @returns {Promise<{ x: number, y: number, width: number, height: number }|null>}
  */
-async function findTextOnScreen(screenshotBase64, region, searchText) {
+async function findTextOnScreen(screenshotBase64, region, searchText, imgSize = null) {
   if (!searchText || !worker) return null;
 
-  const { width: sw, height: sh } = screen.getPrimaryDisplay().bounds;
+  // Use the actual screenshot physical dimensions for crop math.
+  // Falling back to physical bounds (logical × scale) if imgSize is unavailable.
+  const display = screen.getPrimaryDisplay();
+  const scale = display.scaleFactor || 1;
+  const { width: logW, height: logH } = display.bounds;
+  const refW = imgSize ? imgSize.imgWidth  : Math.round(logW * scale);
+  const refH = imgSize ? imgSize.imgHeight : Math.round(logH * scale);
 
-  // Build a 3× crop region around the AI hint (clamped to display)
-  const cropW = Math.round(region.w * sw * 3);
-  const cropH = Math.round(region.h * sh * 3);
-  const cropX = Math.max(0, Math.round(region.x * sw - cropW / 2));
-  const cropY = Math.max(0, Math.round(region.y * sh - cropH / 2));
-  const clampedW = Math.min(cropW, sw - cropX);
-  const clampedH = Math.min(cropH, sh - cropY);
+  // Build a 3× crop region around the AI hint (clamped to screenshot dimensions)
+  const cropW = Math.round(region.w * refW * 3);
+  const cropH = Math.round(region.h * refH * 3);
+  const cropX = Math.max(0, Math.round(region.x * refW - cropW / 2));
+  const cropY = Math.max(0, Math.round(region.y * refH - cropH / 2));
+  const clampedW = Math.min(cropW, refW - cropX);
+  const clampedH = Math.min(cropH, refH - cropY);
 
   // Crop from the full screenshot
   const fullImage = nativeImage.createFromBuffer(Buffer.from(screenshotBase64, 'base64'));
